@@ -1,0 +1,73 @@
+name: Terraform plan
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Environment type"
+        required: true
+        type: string
+        default: "dev"
+
+
+env:
+  PLAN: plan-dev.tfplan
+  PLAN_JSON: tfplan-dev.json
+  TF_IN_AUTOMATION: "true"
+  GIT_STRATEGY: fetch # can be clone if the CICD fails on a cached repository
+  AUTOAPPLY: ""
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  plan:
+    runs-on: ubuntu-latest
+    container: hashicorp/terraform:1.3.6
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Terraform init
+        run: |
+          echo "setup ${{ inputs.environment }}"
+          set -x
+          chmod -R a+rX,og-w .
+          terraform version
+          terraform init -upgrade
+          terraform init -lock=false
+          terraform workspace select ${{ inputs.environment }}
+          set +x
+      - name: Terraform validate
+        run: |
+          echo "validate ${{ inputs.environment }}"
+          terraform validate
+
+      - name: Terraform plan
+        run: |
+          echo "plan ${{ inputs.environment }}"
+          apk --no-cache add jq
+          alias convert_report="jq -r '([.resource_changes[]?.change.actions?]|flatten)|{\"create\":(map(select(.==\"create\"))|length),\"update\":(map(select(.==\"update\"))|length),\"delete\":(map(select(.==\"delete\"))|length)}'"
+          terraform plan -parallelism=30 -out=${PLAN} -input=false -lock=false -var-file=tfvars/${{ inputs.environment }}.tfvars
+          terraform show --json $PLAN | convert_report > ${PLAN_JSON}
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: plan
+          path: |
+            $PLAN
+          
+    
+    
+
+  deployment:
+    uses: socrateasehq/eqp-core/.github/workflows/deployment.yml@FEATURE/actions-deployment
+    needs:
+      - build_frontend
+    with:
+      environment: prod
+      flask_env: production
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
