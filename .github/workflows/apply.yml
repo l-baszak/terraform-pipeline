@@ -44,7 +44,7 @@ jobs:
           terraform workspace select ${{ inputs.environment }}
           set +x
 
-      - name: Download built react app
+      - name: Download plan
         uses: actions/download-artifact@v3
         with:
           name: plan-${SHORT_SHA}
