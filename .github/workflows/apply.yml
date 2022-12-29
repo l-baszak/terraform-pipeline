@@ -12,7 +12,6 @@ on:
 
 env:
   PLAN: plan-dev.tfplan
-  PLAN_JSON: tfplan-dev.json
   TF_IN_AUTOMATION: "true"
   GIT_STRATEGY: fetch # can be clone if the CICD fails on a cached repository
   AUTOAPPLY: ""
@@ -44,21 +43,14 @@ jobs:
           terraform init -lock=false
           terraform workspace select ${{ inputs.environment }}
           set +x
-      - name: Terraform validate
-        run: |
-          echo "validate ${{ inputs.environment }}"
-          terraform validate
 
-      - name: Terraform plan
-        run: |
-          echo "plan ${{ inputs.environment }}"
-          apk --no-cache add jq
-          alias convert_report="jq -r '([.resource_changes[]?.change.actions?]|flatten)|{\"create\":(map(select(.==\"create\"))|length),\"update\":(map(select(.==\"update\"))|length),\"delete\":(map(select(.==\"delete\"))|length)}'"
-          terraform plan -parallelism=30 -out=${PLAN} -input=false -lock=false -var-file=tfvars/${{ inputs.environment }}.tfvars
-          terraform show --json $PLAN | convert_report > ${PLAN_JSON}
-
-      - uses: actions/upload-artifact@v3
+      - name: Download built react app
+        uses: actions/download-artifact@v3
         with:
           name: plan-${SHORT_SHA}
-          path: |
-            $PLAN
+          path: plan
+
+      - name: Terraform apply
+        run: |
+            echo "apply ${{ inputs.environment }}"
+            terraform apply -parallelism=50 -input=false ${PLAN}
